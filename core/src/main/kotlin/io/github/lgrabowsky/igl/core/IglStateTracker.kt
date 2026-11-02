@@ -174,7 +174,7 @@ class IglStateTracker(config: TrackerConfig = TrackerConfig()) {
         val iglBelongsToSign = current is IglStatus.IglActive &&
             current.lastConfirmedMs >= ep.startMs - cfg.iglLeadMs
         status = when {
-            iglBelongsToSign -> (current as IglStatus.IglActive).copy(limitKmh = limit)
+            iglBelongsToSign -> current.copy(limitKmh = limit)
 
             ep.conclusive && ep.iglEvidence <= cfg.maxIglEvidenceForNegative ->
                 if (current is IglStatus.NoIgl && current.limitKmh == limit) {
