@@ -6,6 +6,11 @@
         android:name="android.hardware.camera.any"
         android:required="true" />
 
+    <!-- Nur zum Erkennen angesteckter USB-Webcams (Hinweis, falls Android sie nicht freigibt) -->
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false" />
+
     <uses-permission android:name="android.permission.CAMERA" />
 
     <application

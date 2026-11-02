@@ -32,7 +32,7 @@ data class AnalysisResult(
 )
 
 /**
- * CameraX-Analyzer: Kamerabild → aufrecht drehen → oberen Suchbereich ausschneiden →
+ * CameraX-Analyzer: Kamerabild → aufrecht drehen → ggf. Software-Zoom → oberen Suchbereich ausschneiden →
  * ML-Kit-Texterkennung → [FrameAnalyzer] (IG-L, Tempo-Zahlen, roter Ring).
  *
  * Läuft auf einem eigenen Thread. Dank `STRATEGY_KEEP_ONLY_LATEST` wird immer das neueste Bild
@@ -41,7 +41,24 @@ data class AnalysisResult(
 class SignAnalyzer(
     private val detectionConfig: () -> DetectionConfig,
     private val onResult: (AnalysisResult) -> Unit,
+    /** Erhält das aufbereitete Bild, wenn [publishPreviewFrames] gesetzt ist. */
+    private val onPreviewFrame: (Bitmap) -> Unit,
 ) : ImageAnalysis.Analyzer {
+
+    /**
+     * Feste Bilddrehung statt der von CameraX berechneten. Für externe Kameras (USB-Webcam), die
+     * sich nicht mit dem Handy mitdrehen; null = CameraX-Drehung verwenden (eingebaute Kameras).
+     */
+    @Volatile
+    var fixedRotationDegrees: Int? = null
+
+    /** Digitaler Zoom in Software (Bildmitte vergrößern) für Kameras ohne eigenen Zoom. */
+    @Volatile
+    var softwareZoom: Float = 1f
+
+    /** Aufbereitete Bilder zusätzlich als Vorschau ausgeben (wenn keine CameraX-Vorschau läuft). */
+    @Volatile
+    var publishPreviewFrames: Boolean = false
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private var frameAnalyzer = FrameAnalyzer()
@@ -59,7 +76,7 @@ class SignAnalyzer(
         }
         lastFrameMs = now
 
-        val rotation = imageProxy.imageInfo.rotationDegrees
+        val rotation = fixedRotationDegrees ?: imageProxy.imageInfo.rotationDegrees
         val frame = try {
             imageProxy.toBitmap()
         } catch (e: Exception) {
@@ -70,7 +87,8 @@ class SignAnalyzer(
         }
         if (frame == null) return
 
-        val upright = frame.rotatedBy(rotation)
+        val upright = frame.rotatedBy(rotation).zoomedBy(softwareZoom)
+        if (publishPreviewFrames) onPreviewFrame(upright)
         val config = detectionConfig()
         if (config != frameAnalyzer.config) frameAnalyzer = FrameAnalyzer(config)
 
@@ -128,6 +146,26 @@ class SignAnalyzer(
             if (degrees % 360 == 0) return this
             val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
             return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
+        }
+
+        /**
+         * Schneidet die Bildmitte aus und vergrößert sie wieder auf die ursprüngliche Größe.
+         * Bringt keine zusätzlichen Details, aber kleine Schrift wird für die Texterkennung größer.
+         */
+        fun Bitmap.zoomedBy(zoom: Float): Bitmap {
+            if (zoom <= 1.01f) return this
+            val cropWidth = (width / zoom).roundToInt().coerceIn(1, width)
+            val cropHeight = (height / zoom).roundToInt().coerceIn(1, height)
+            val matrix = Matrix().apply { setScale(width.toFloat() / cropWidth, height.toFloat() / cropHeight) }
+            return Bitmap.createBitmap(
+                this,
+                (width - cropWidth) / 2,
+                (height - cropHeight) / 2,
+                cropWidth,
+                cropHeight,
+                matrix,
+                true,
+            )
         }
 
         fun Rect.toBoundingBox() = BoundingBox(left, top, right, bottom)

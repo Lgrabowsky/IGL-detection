@@ -24,6 +24,7 @@ class SettingsRepository(context: Context) {
         return AppSettings(
             cameraKey = prefs.getString(KEY_CAMERA, d.cameraKey) ?: d.cameraKey,
             zoomRatio = prefs.getFloat(KEY_ZOOM, d.zoomRatio),
+            externalRotationDegrees = prefs.getInt(KEY_EXTERNAL_ROTATION, d.externalRotationDegrees),
             highResolution = prefs.getBoolean(KEY_HIGH_RES, d.highResolution),
             evSpeedKmh = prefs.getInt(KEY_EV_SPEED, d.evSpeedKmh),
             speechEnabled = prefs.getBoolean(KEY_SPEECH, d.speechEnabled),
@@ -39,6 +40,7 @@ class SettingsRepository(context: Context) {
         prefs.edit {
             putString(KEY_CAMERA, s.cameraKey)
             putFloat(KEY_ZOOM, s.zoomRatio)
+            putInt(KEY_EXTERNAL_ROTATION, s.externalRotationDegrees)
             putBoolean(KEY_HIGH_RES, s.highResolution)
             putInt(KEY_EV_SPEED, s.evSpeedKmh)
             putBoolean(KEY_SPEECH, s.speechEnabled)
@@ -53,6 +55,7 @@ class SettingsRepository(context: Context) {
     private companion object {
         const val KEY_CAMERA = "camera"
         const val KEY_ZOOM = "zoom"
+        const val KEY_EXTERNAL_ROTATION = "external_rotation"
         const val KEY_HIGH_RES = "high_resolution"
         const val KEY_EV_SPEED = "ev_speed"
         const val KEY_SPEECH = "speech"

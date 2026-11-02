@@ -1,6 +1,7 @@
 package io.github.lgrabowsky.igldetection
 
 import android.app.Application
+import android.graphics.Bitmap
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -41,6 +42,10 @@ class DetectionViewModel(application: Application) : AndroidViewModel(applicatio
     private val _debug = MutableStateFlow<DebugFrame?>(null)
     val debug: StateFlow<DebugFrame?> = _debug.asStateFlow()
 
+    /** Vorschau aus den analysierten Bildern (nur bei externen Kameras, siehe CameraController). */
+    private val _previewFrame = MutableStateFlow<Bitmap?>(null)
+    val previewFrame: StateFlow<Bitmap?> = _previewFrame.asStateFlow()
+
     private val _camera = MutableStateFlow(CameraState())
     val camera: StateFlow<CameraState> = _camera.asStateFlow()
 
@@ -48,6 +53,7 @@ class DetectionViewModel(application: Application) : AndroidViewModel(applicatio
     val analyzer = SignAnalyzer(
         detectionConfig = { settings.value.toDetectionConfig() },
         onResult = ::onAnalysisResult,
+        onPreviewFrame = { _previewFrame.value = it },
     )
 
     init {
@@ -67,6 +73,7 @@ class DetectionViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun onCameraState(state: CameraState) {
         _camera.value = state
+        if (!state.framePreview) _previewFrame.value = null
     }
 
     fun resetStatus() = step {

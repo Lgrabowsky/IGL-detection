@@ -9,6 +9,8 @@ data class AppSettings(
     val cameraKey: String = CameraOptions.AUTO,
     /** Optischer/digitaler Zoom – Schilder werden so früher lesbar. */
     val zoomRatio: Float = 2f,
+    /** Drehung des Bildes externer Kameras (0/90/180/270°), z. B. bei kopfüber montierter Webcam. */
+    val externalRotationDegrees: Int = 0,
     /** 1920 × 1080 statt 1280 × 720 für die Analyse. */
     val highResolution: Boolean = true,
     /** Für E-Fahrzeuge erlaubtes Tempo, wenn ein IG-L-Limit aktiv ist. */

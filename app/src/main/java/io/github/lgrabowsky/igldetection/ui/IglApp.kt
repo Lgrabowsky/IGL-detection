@@ -1,13 +1,18 @@
 package io.github.lgrabowsky.igldetection.ui
 
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.hardware.usb.UsbManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -91,6 +99,20 @@ private fun MainScreen(viewModel: DetectionViewModel, inPictureInPicture: Boolea
                 if (settings.showDebugOverlay && !inPictureInPicture) {
                     DetectionOverlay(debug, settings.searchAreaBottom, Modifier.fillMaxSize())
                 }
+                if (!inPictureInPicture && camera.unavailableUsbCameras.isNotEmpty()) {
+                    Text(
+                        text = "${camera.unavailableUsbCameras.joinToString()} ist angesteckt, wird von Android " +
+                            "aber nicht als Kamera bereitgestellt – siehe Einstellungen.",
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .windowInsetsPadding(WindowInsets.safeDrawing)
+                            .padding(8.dp)
+                            .background(Color(0xCCB71C1C), MaterialTheme.shapes.small)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
                 camera.error?.let { error ->
                     Text(
                         text = error,
@@ -107,6 +129,7 @@ private fun MainScreen(viewModel: DetectionViewModel, inPictureInPicture: Boolea
                     ZoomBar(
                         zoom = settings.zoomRatio.coerceIn(zoomRange.start, zoomRange.endInclusive),
                         range = zoomRange,
+                        digital = camera.softwareZoom,
                         onZoomChange = { value -> viewModel.updateSettings { it.copy(zoomRatio = value) } },
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -159,6 +182,23 @@ private fun CameraPreview(viewModel: DetectionViewModel, modifier: Modifier = Mo
     val lifecycleOwner = LocalLifecycleOwner.current
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val camera by viewModel.camera.collectAsStateWithLifecycle()
+    val previewFrame by viewModel.previewFrame.collectAsStateWithLifecycle()
+
+    // USB-Kamera an-/abgesteckt → Kamera neu verbinden.
+    var usbEvents by remember { mutableIntStateOf(0) }
+    DisposableEffect(context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                usbEvents++
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -171,12 +211,13 @@ private fun CameraPreview(viewModel: DetectionViewModel, modifier: Modifier = Mo
         onDispose { controller.release() }
     }
 
-    LaunchedEffect(settings.cameraKey, settings.highResolution) {
+    LaunchedEffect(settings.cameraKey, settings.highResolution, usbEvents) {
         val state = controller.bind(
             lifecycleOwner = lifecycleOwner,
             previewView = previewView,
             cameraKey = settings.cameraKey,
             highResolution = settings.highResolution,
+            externalRotationDegrees = settings.externalRotationDegrees,
             analyzer = viewModel.analyzer,
         )
         viewModel.onCameraState(state)
@@ -185,14 +226,33 @@ private fun CameraPreview(viewModel: DetectionViewModel, modifier: Modifier = Mo
     LaunchedEffect(settings.zoomRatio, camera.active) {
         controller.setZoom(settings.zoomRatio)
     }
+    LaunchedEffect(settings.externalRotationDegrees) {
+        controller.setExternalRotation(settings.externalRotationDegrees)
+    }
 
-    AndroidView(factory = { previewView }, modifier = modifier)
+    Box(modifier) {
+        AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+        if (camera.framePreview) {
+            // Externe Kamera: die analysierten (richtig gedrehten) Bilder als Vorschau zeigen.
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                previewFrame?.let { frame ->
+                    Image(
+                        bitmap = frame.asImageBitmap(),
+                        contentDescription = "Kamerabild",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
 private fun ZoomBar(
     zoom: Float,
     range: ClosedFloatingPointRange<Float>,
+    digital: Boolean,
     onZoomChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -204,7 +264,7 @@ private fun ZoomBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Zoom ${"%.1f".format(zoom)}×", color = Color.White)
+        Text("Zoom ${"%.1f".format(zoom)}×" + if (digital) " (digital)" else "", color = Color.White)
         Slider(
             value = zoom,
             onValueChange = onZoomChange,

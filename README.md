@@ -111,11 +111,24 @@ Bitte die App nicht während der Fahrt bedienen.
 
 ### Externe USB-Webcam
 
-Android stellt USB-Webcams (UVC) auf vielen Geräten ab Android 14 als normale Kamera bereit.
-Dann erscheint sie in den Einstellungen als „Externe Kamera (USB)“ und wird bei „Automatisch“
-bevorzugt. Die Webcam vor dem App-Start anstecken (bzw. die App danach neu starten). Unterstützt
-das Handy keine externen Kameras, taucht sie nicht auf – dafür wäre eine eigene UVC-Anbindung
-(z. B. über libuvc) nötig, siehe unten.
+Getestet wird mit einer **Logitech StreamCam** (USB-C, UVC). Android stellt solche Webcams auf
+vielen Geräten ab Android 14 als normale Kamera bereit. Dann erscheint sie in den Einstellungen
+mit ihrem Namen (z. B. „Logitech StreamCam (USB)“) und wird bei „Automatisch“ bevorzugt.
+
+- **Anstecken:** am besten vor dem App-Start. Die App verbindet sich beim An-/Abstecken neu;
+  erscheint die Kamera trotzdem nicht, die App einmal schließen und neu starten.
+- **Nicht freigegeben:** Ist eine USB-Kamera angesteckt, die Android nicht als Kamera
+  bereitstellt, zeigt die App einen roten Hinweis. Dann unterstützt das Handy keine externen
+  Kameras – dafür wäre eine eigene UVC-Anbindung (z. B. über libuvc) nötig, siehe unten.
+- **Ausrichtung:** Eine Webcam dreht sich nicht mit dem Handy mit. Die App verwendet ihr Bild
+  deshalb so, wie die Webcam es liefert, unabhängig davon, wie das Handy liegt. Hängt die Kamera
+  kopfüber, in den Einstellungen „Bild der externen Kamera drehen“ auf 180° stellen. Die
+  StreamCam quer (nicht hochkant) montieren.
+- **Zoom:** Die StreamCam hat einen weiten Bildwinkel (78°) und keinen eigenen Zoom. Die App zoomt
+  dann digital: Sie schneidet die Bildmitte aus und vergrößert sie für die Texterkennung
+  (Regler „Zoom … (digital)“, Standard 2×).
+- **Vorschau:** Bei externen Kameras zeigt die Vorschau genau die analysierten Bilder (dadurch
+  ruckeliger als bei der Handykamera, ca. 5–8 Bilder/s).
 
 ## Grenzen und nächste Schritte
 

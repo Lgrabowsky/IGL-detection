@@ -68,8 +68,30 @@ fun SettingsPanel(
                     )
                 }
                 Hint(
-                    "USB-Webcams erscheinen hier, wenn das Handy sie als Kamera unterstützt (UVC, " +
-                        "auf vielen Geräten ab Android 14). Nach dem Anstecken die App neu starten.",
+                    "USB-Webcams (z. B. Logitech StreamCam) erscheinen hier, wenn das Handy sie als Kamera " +
+                        "unterstützt (UVC, auf vielen Geräten ab Android 14). Erscheint sie nach dem Anstecken " +
+                        "nicht, die App einmal schließen und neu starten.",
+                )
+                if (camera.unavailableUsbCameras.isNotEmpty()) {
+                    Text(
+                        "Angesteckt: ${camera.unavailableUsbCameras.joinToString()} – Android stellt dieses " +
+                            "Gerät aber nicht als Kamera bereit. Falls ein Neustart der App nicht hilft, " +
+                            "unterstützt dieses Handy keine externen Kameras.",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp,
+                    )
+                }
+                Text("Bild der externen Kamera drehen", fontWeight = FontWeight.Medium)
+                ChoiceRow(
+                    options = listOf(0, 90, 180, 270),
+                    selected = settings.externalRotationDegrees,
+                    label = { "$it°" },
+                    onSelect = { value -> onChange { it.copy(externalRotationDegrees = value) } },
+                )
+                Hint(
+                    "Für USB-Webcams, die sich nicht mit dem Handy mitdrehen: 0° bei normal montierter " +
+                        "Webcam, 180° wenn sie kopfüber hängt. Hat die Kamera keinen eigenen Zoom, wird " +
+                        "digital (in Software) gezoomt.",
                 )
                 SwitchRow(
                     label = "Hohe Auflösung (1080p)",
