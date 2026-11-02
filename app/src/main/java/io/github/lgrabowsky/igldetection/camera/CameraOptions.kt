@@ -6,15 +6,31 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalLensFacing
 
 /** Eine auswählbare Kamera, wie sie in den Einstellungen angezeigt wird. */
-data class CameraOption(val key: String, val label: String, val isExternal: Boolean)
+data class CameraOption(
+    val key: String,
+    val label: String,
+    val isExternal: Boolean,
+    /** USB-Webcam, die über den App-eigenen Treiber ([UvcCameraSource]) angesprochen wird. */
+    val usesAppDriver: Boolean = false,
+)
 
 /**
- * Listet die verfügbaren Kameras auf – inklusive externer USB-Kameras (UVC), sofern Android sie
- * als Kamera bereitstellt (Camera2 „EXTERNAL“; auf vielen Geräten ab Android 14).
+ * Listet die verfügbaren Kameras auf – inklusive externer USB-Kameras (UVC): entweder von Android
+ * bereitgestellt (Camera2 „EXTERNAL“; auf vielen Geräten ab Android 14) oder über den
+ * App-eigenen USB-Treiber.
  */
 object CameraOptions {
 
     const val AUTO = "auto"
+    const val APP_DRIVER = "usb-app-driver"
+
+    /** Eintrag für eine USB-Webcam, die nur über den App-eigenen Treiber nutzbar ist. */
+    fun appDriverOption(deviceName: String) = CameraOption(
+        key = APP_DRIVER,
+        label = "$deviceName (USB, App-Treiber)",
+        isExternal = true,
+        usesAppDriver = true,
+    )
 
     @OptIn(ExperimentalLensFacing::class)
     fun describe(infos: List<CameraInfo>): List<Pair<CameraOption, CameraInfo>> {
@@ -39,11 +55,13 @@ object CameraOptions {
 
     /**
      * Wählt die Kamera zu [key]. Bei [AUTO] (oder wenn die gespeicherte Kamera nicht mehr da ist,
-     * z. B. abgesteckte Webcam): externe Kamera bevorzugt, sonst Rückkamera.
+     * z. B. abgesteckte Webcam): USB-Webcam bevorzugt (über Android, sonst App-Treiber), sonst
+     * Rückkamera.
      */
-    fun select(cameras: List<Pair<CameraOption, CameraInfo>>, key: String): Pair<CameraOption, CameraInfo>? =
-        cameras.firstOrNull { it.first.key == key }
-            ?: cameras.firstOrNull { it.first.isExternal }
-            ?: cameras.firstOrNull { it.first.key.startsWith("back") }
-            ?: cameras.firstOrNull()
+    fun select(options: List<CameraOption>, key: String): CameraOption? =
+        options.firstOrNull { it.key == key }
+            ?: options.firstOrNull { it.isExternal && !it.usesAppDriver }
+            ?: options.firstOrNull { it.usesAppDriver }
+            ?: options.firstOrNull { it.key.startsWith("back") }
+            ?: options.firstOrNull()
 }

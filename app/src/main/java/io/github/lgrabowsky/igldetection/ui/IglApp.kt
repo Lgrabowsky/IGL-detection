@@ -99,17 +99,17 @@ private fun MainScreen(viewModel: DetectionViewModel, inPictureInPicture: Boolea
                 if (settings.showDebugOverlay && !inPictureInPicture) {
                     DetectionOverlay(debug, settings.searchAreaBottom, Modifier.fillMaxSize())
                 }
-                if (!inPictureInPicture && camera.unavailableUsbCameras.isNotEmpty()) {
+                val cameraInfo = camera.info
+                if (!inPictureInPicture && cameraInfo != null) {
                     Text(
-                        text = "${camera.unavailableUsbCameras.joinToString()} ist angesteckt, wird von Android " +
-                            "aber nicht als Kamera bereitgestellt – siehe Einstellungen.",
+                        text = cameraInfo,
                         color = Color.White,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .windowInsetsPadding(WindowInsets.safeDrawing)
                             .padding(8.dp)
-                            .background(Color(0xCCB71C1C), MaterialTheme.shapes.small)
+                            .background(Color(0xCC263238), MaterialTheme.shapes.small)
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                 }
@@ -219,6 +219,7 @@ private fun CameraPreview(viewModel: DetectionViewModel, modifier: Modifier = Mo
             highResolution = settings.highResolution,
             externalRotationDegrees = settings.externalRotationDegrees,
             analyzer = viewModel.analyzer,
+            onCameraInfo = viewModel::onCameraInfo,
         )
         viewModel.onCameraState(state)
         controller.setZoom(settings.zoomRatio)

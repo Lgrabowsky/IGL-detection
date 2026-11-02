@@ -37,11 +37,20 @@ data class TrackerConfig(
     /** Gewichtung eines „IG-L“-Treffers direkt neben einem 100er-Schild. */
     val nearSignBoost: Float = 1.5f,
     /** Ein Schild gilt als passiert, wenn es so lange nicht mehr gesehen wurde. */
-    val signGapMs: Long = 1_500,
+    val signGapMs: Long = 700,
     /** In so vielen Bildern muss ein Tempowert gelesen werden, damit das Schild als erkannt gilt. */
     val minSignFrames: Int = 2,
     /** So weit dürfen „IG-L“ und das zugehörige 100er-Schild zeitlich auseinander liegen. */
     val iglLeadMs: Long = 5_000,
+    /**
+     * „100 ohne IG-L“ wird schon während der Annäherung entschieden, sobald die Zahl so groß
+     * (Pixel-Höhe) im Bild ist, dass ein IG-L-Zusatz lesbar wäre …
+     */
+    val earlyDecisionMinTextHeightPx: Int = 40,
+    /** … und zwar in so vielen Bildern, ohne dass dabei „IG-L“ gelesen wurde. */
+    val earlyDecisionMinFrames: Int = 3,
+    /** Gab es beim Schild schon einen (unsicheren) IG-L-Hinweis, wird nicht vorzeitig entschieden. */
+    val maxIglEvidenceForEarlyDecision: Float = 0.5f,
     /** Nach dieser Zeit ohne erneute Bestätigung verfällt ein Befund. */
     val stateValidityMs: Long = 15 * 60_000L,
 )
@@ -55,9 +64,10 @@ data class TrackerConfig(
  *   zu sehen war – IG-L gibt es nur mit 100 km/h.
  * - **Jedes andere Tempolimit** (80, 60, 130 …) beendet IG-L sofort, sobald es erkannt ist
  *   (in ≥ [TrackerConfig.minSignFrames] Bildern gelesen).
- * - **100 ohne IG-L:** Wurde ein 100er-Schild passiert, ohne dass dazu „IG-L“ bestätigt wurde,
- *   endet IG-L ebenfalls. (Ob ein Zusatz dabei ist, steht erst fest, wenn das Schild vorbei ist –
- *   der kleine Zusatz wird oft erst beim Näherkommen lesbar.)
+ * - **100 ohne IG-L** beendet IG-L ebenfalls – noch während der Annäherung, sobald das Schild
+ *   so groß im Bild ist, dass ein IG-L-Zusatz lesbar wäre (siehe
+ *   [TrackerConfig.earlyDecisionMinTextHeightPx]), spätestens aber, wenn das Schild aus dem Bild
+ *   verschwunden ist. Wird „IG-L“ danach doch noch gelesen, wird IG-L wieder aktiv.
  * - **Verfall:** ohne erneute Bestätigung wird der Status nach [TrackerConfig.stateValidityMs]
  *   wieder „unbekannt“.
  *
@@ -77,9 +87,12 @@ class IglStateTracker(config: TrackerConfig = TrackerConfig()) {
     private class Evidence(val timeMs: Long, val value: Float)
 
     /** Ein Tempowert, der gerade (mit Unterbrechungen < signGapMs) zu sehen ist. */
-    private class SignTrack(val valueKmh: Int, val firstSeenMs: Long) {
+    private class SignTrack(val valueKmh: Int, val firstSeenMs: Long, var iglEvidence: Float) {
         var lastSeenMs = firstSeenMs
         var frames = 0
+
+        /** Bilder, in denen die Zahl groß genug für eine vorzeitige Entscheidung war. */
+        var largeFrames = 0
     }
 
     private val evidence = ArrayDeque<Evidence>()
@@ -99,17 +112,21 @@ class IglStateTracker(config: TrackerConfig = TrackerConfig()) {
         finishPassedSigns(now, cfg)
         pruneEvidence(now, cfg)
 
-        for (value in observation.speedSigns.map { it.valueKmh }.distinct()) {
-            val track = tracks.getOrPut(value) { SignTrack(value, now) }
+        for ((value, signs) in observation.speedSigns.groupBy { it.valueKmh }) {
+            val track = tracks.getOrPut(value) { SignTrack(value, now, iglEvidence = currentEvidence) }
             track.lastSeenMs = now
             track.frames++
+            if (signs.maxOf { it.box.height } >= cfg.earlyDecisionMinTextHeightPx) track.largeFrames++
             if (value == IGL_LIMIT_KMH) lastHundredSeenMs = now
         }
 
         val frameEvidence = observation.iglMatches.maxOfOrNull {
             it.score * if (it.nearSpeedSign) cfg.nearSignBoost else 1f
         } ?: 0f
-        if (frameEvidence > 0f) evidence.addLast(Evidence(now, frameEvidence))
+        if (frameEvidence > 0f) {
+            evidence.addLast(Evidence(now, frameEvidence))
+            tracks[IGL_LIMIT_KMH]?.let { it.iglEvidence += frameEvidence }
+        }
 
         val otherLimit = recognizedOtherLimit(cfg)
         if (otherLimit != null) {
@@ -121,10 +138,24 @@ class IglStateTracker(config: TrackerConfig = TrackerConfig()) {
                 is IglStatus.IglActive -> s.copy(lastConfirmedMs = now)
                 else -> IglStatus.IglActive(sinceMs = now, lastConfirmedMs = now)
             }
+        } else {
+            decideHundredEarly(now, cfg)
         }
 
         expire(now, cfg)
         return status
+    }
+
+    /**
+     * 100er-Schild ist schon groß im Bild, aber kein IG-L-Zusatz zu lesen → nicht bis zum
+     * Passieren warten, sondern gleich „100 ohne IG-L“ anzeigen.
+     */
+    private fun decideHundredEarly(now: Long, cfg: TrackerConfig) {
+        val hundred = tracks[IGL_LIMIT_KMH] ?: return
+        if (hundred.frames < cfg.minSignFrames || hundred.largeFrames < cfg.earlyDecisionMinFrames) return
+        if (hundred.iglEvidence > cfg.maxIglEvidenceForEarlyDecision) return
+        if (lastIglConfirmedMs >= hundred.firstSeenMs - cfg.iglLeadMs) return // IG-L gehört zu diesem Schild
+        setNoIgl(IGL_LIMIT_KMH, now)
     }
 
     /** Ohne neues Bild aufrufen (z. B. periodisch), damit Schilder als passiert gelten und Befunde verfallen. */

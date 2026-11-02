@@ -16,12 +16,14 @@ class IglStateTrackerTest {
         igl: Float? = null,
         near: Boolean = false,
         vararg limits: Int,
+        /** Höhe der Tempo-Zahl in Pixeln (≥ 40 = nah genug für eine vorzeitige Entscheidung). */
+        h: Int = 30,
     ) = FrameObservation(
         timestampMs = t,
         imageWidth = 1280,
         imageHeight = 720,
         iglMatches = listOfNotNull(igl?.let { IglMatch("IG-L", box(600, 200, 60, 20), it, near) }),
-        speedSigns = limits.mapIndexed { i, limit -> SpeedSign(limit, box(400 + i * 300, 130, 60, 40), 1f, null) },
+        speedSigns = limits.mapIndexed { i, limit -> SpeedSign(limit, box(400 + i * 300, 130, h * 3 / 2, h), 1f, null) },
     )
 
     /** Simuliert ~6 Bilder/s über [fromMs]..[toMs]. */
@@ -109,21 +111,52 @@ class IglStateTrackerTest {
     }
 
     @Test
-    fun `100 ohne IG-L beendet IG-L, sobald das Schild passiert ist`() {
+    fun `kleines 100er-Schild ohne IG-L - Wechsel spaetestens wenn es aus dem Bild ist`() {
         passIglGantry(0)
-        drive(60_000, 62_000) { frame(it, null, false, 100) }
+        drive(60_000, 62_000) { frame(it, null, false, 100) } // Zahl nur 30 px hoch
         assertIs<IglActive>(tracker.status) // Zusatz könnte noch lesbar werden
 
-        val status = tracker.tick(65_000)
+        val status = tracker.tick(61_920 + 800) // letztes Bild + 0,8 s
         assertIs<NoIgl>(status)
         assertEquals(100, status.limitKmh)
     }
 
     @Test
-    fun `100 mit nur unsicherem IG-L-Hinweis zaehlt als 100 ohne IG-L`() {
+    fun `grosses 100er-Schild ohne IG-L - Wechsel schon waehrend der Annaeherung`() {
         passIglGantry(0)
-        drive(60_000, 62_000) { frame(it, if (it == 60_960L) 0.6f else null, false, 100) }
-        assertIs<NoIgl>(tracker.tick(65_000))
+        tracker.update(frame(60_000, null, false, 100, h = 25))
+        tracker.update(frame(60_160, null, false, 100, h = 32))
+        tracker.update(frame(60_320, null, false, 100, h = 41))
+        tracker.update(frame(60_480, null, false, 100, h = 48))
+        assertIs<IglActive>(tracker.status) // erst 2 große Bilder
+        val status = tracker.update(frame(60_640, null, false, 100, h = 55))
+        assertIs<NoIgl>(status) // Schild ist noch im Bild
+        assertEquals(100, status.limitKmh)
+    }
+
+    @Test
+    fun `grosses 100er-Schild mit IG-L bleibt IG-L`() {
+        passIglGantry(0)
+        val status = drive(60_000, 62_000) { frame(it, 1f, true, 100, 100, h = 50) }
+        assertIs<IglActive>(status)
+        assertIs<IglActive>(tracker.tick(65_000))
+    }
+
+    @Test
+    fun `IG-L erst spaet gelesen - nach vorzeitigem Wechsel wieder aktiv`() {
+        drive(0, 500) { frame(it, null, false, 100, h = 50) }
+        assertIs<NoIgl>(tracker.status)
+        val status = drive(660, 1_200) { frame(it, 1f, true, 100, h = 60) }
+        assertIs<IglActive>(status)
+        assertIs<IglActive>(tracker.tick(5_000))
+    }
+
+    @Test
+    fun `unsicherer IG-L-Hinweis verhindert vorzeitigen Wechsel`() {
+        passIglGantry(0)
+        drive(60_000, 62_000) { frame(it, if (it == 60_160L) 0.6f else null, false, 100, h = 50) }
+        assertIs<IglActive>(tracker.status)
+        assertIs<NoIgl>(tracker.tick(63_000)) // IG-L nie bestätigt → nach dem Passieren kein IG-L
     }
 
     @Test

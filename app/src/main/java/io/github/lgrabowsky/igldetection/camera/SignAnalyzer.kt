@@ -68,6 +68,7 @@ class SignAnalyzer(
     @Volatile
     private var closed = false
 
+    /** CameraX-Bild (eingebaute oder vom System bereitgestellte externe Kamera). */
     override fun analyze(imageProxy: ImageProxy) {
         val now = SystemClock.elapsedRealtime()
         if (closed || now - lastFrameMs < MIN_FRAME_INTERVAL_MS) {
@@ -85,9 +86,17 @@ class SignAnalyzer(
         } finally {
             imageProxy.close()
         }
-        if (frame == null) return
+        if (frame != null) processFrame(frame, rotation, now)
+    }
 
-        val upright = frame.rotatedBy(rotation).zoomedBy(softwareZoom)
+    /**
+     * Wertet ein Bild aus – gemeinsamer Weg für CameraX und den App-eigenen USB-Treiber
+     * ([UvcCameraSource]). Blockiert für die Dauer der Texterkennung.
+     */
+    @Synchronized
+    fun processFrame(frame: Bitmap, rotationDegrees: Int, timestampMs: Long = SystemClock.elapsedRealtime()) {
+        if (closed) return
+        val upright = frame.rotatedBy(rotationDegrees).zoomedBy(softwareZoom)
         if (publishPreviewFrames) onPreviewFrame(upright)
         val config = detectionConfig()
         if (config != frameAnalyzer.config) frameAnalyzer = FrameAnalyzer(config)
@@ -109,7 +118,7 @@ class SignAnalyzer(
 
         val ocr = text.toOcrResult()
         val observation = frameAnalyzer.analyze(
-            timestampMs = now,
+            timestampMs = timestampMs,
             imageWidth = upright.width,
             imageHeight = upright.height,
             ocr = ocr,
@@ -119,7 +128,7 @@ class SignAnalyzer(
             AnalysisResult(
                 observation = observation,
                 textBoxes = ocr.lines.map { it.box },
-                processingMs = SystemClock.elapsedRealtime() - now,
+                processingMs = SystemClock.elapsedRealtime() - timestampMs,
             ),
         )
     }
@@ -139,8 +148,8 @@ class SignAnalyzer(
     private companion object {
         const val TAG = "SignAnalyzer"
 
-        /** Begrenzung auf ca. 8 Bilder/s – schont Akku und verhindert Überhitzen in der Halterung. */
-        const val MIN_FRAME_INTERVAL_MS = 120L
+        /** Höchstens ca. 12 Bilder/s – schont Akku und verhindert Überhitzen in der Halterung. */
+        const val MIN_FRAME_INTERVAL_MS = 80L
 
         fun Bitmap.rotatedBy(degrees: Int): Bitmap {
             if (degrees % 360 == 0) return this

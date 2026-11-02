@@ -1,17 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Rückkamera, Frontkamera oder externe USB-Kamera -->
     <uses-feature
         android:name="android.hardware.camera.any"
         android:required="true" />
 
-    <!-- Nur zum Erkennen angesteckter USB-Webcams (Hinweis, falls Android sie nicht freigibt) -->
+    <!-- USB-Webcams über den App-eigenen Treiber (optional, die App läuft auch ohne USB-Host) -->
     <uses-feature
         android:name="android.hardware.usb.host"
-        android:required="false" />
+        android:required="false"
+        tools:replace="android:required" />
 
     <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Von der USB-Webcam-Bibliothek angefordert, von dieser App aber nicht benötigt -->
+    <uses-permission
+        android:name="android.permission.RECORD_AUDIO"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE"
+        tools:node="remove" />
 
     <application
         android:allowBackup="true"
@@ -37,6 +56,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+                Beim Anstecken einer USB-Webcam bietet Android an, die App zu öffnen. Wird das
+                bestätigt (optional „immer“), erhält die App damit auch den USB-Zugriff.
+            -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_video_devices" />
         </activity>
     </application>
 

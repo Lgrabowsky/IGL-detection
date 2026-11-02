@@ -68,19 +68,11 @@ fun SettingsPanel(
                     )
                 }
                 Hint(
-                    "USB-Webcams (z. B. Logitech StreamCam) erscheinen hier, wenn das Handy sie als Kamera " +
-                        "unterstützt (UVC, auf vielen Geräten ab Android 14). Erscheint sie nach dem Anstecken " +
-                        "nicht, die App einmal schließen und neu starten.",
+                    "USB-Webcams (z. B. Logitech StreamCam) erscheinen hier mit „(USB)“, wenn Android sie " +
+                        "als Kamera bereitstellt, sonst mit „(USB, App-Treiber)“: Dann spricht die App die " +
+                        "Webcam über einen eigenen USB-Treiber an – beim ersten Mal fragt Android nach dem " +
+                        "USB-Zugriff. Bei „Automatisch“ wird eine angesteckte Webcam bevorzugt.",
                 )
-                if (camera.unavailableUsbCameras.isNotEmpty()) {
-                    Text(
-                        "Angesteckt: ${camera.unavailableUsbCameras.joinToString()} – Android stellt dieses " +
-                            "Gerät aber nicht als Kamera bereit. Falls ein Neustart der App nicht hilft, " +
-                            "unterstützt dieses Handy keine externen Kameras.",
-                        color = MaterialTheme.colorScheme.error,
-                        fontSize = 13.sp,
-                    )
-                }
                 Text("Bild der externen Kamera drehen", fontWeight = FontWeight.Medium)
                 ChoiceRow(
                     options = listOf(0, 90, 180, 270),

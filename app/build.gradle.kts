@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.lgrabowsky.igldetection"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     buildTypes {
@@ -63,4 +63,7 @@ dependencies {
 
     // Texterkennung auf dem Gerät (Modell im APK enthalten → funktioniert offline)
     implementation(libs.mlkit.text.recognition)
+
+    // USB-Webcam-Treiber (UVC über libusb/libuvc) für Handys, die Webcams nicht selbst bereitstellen
+    implementation(libs.uvc.android)
 }

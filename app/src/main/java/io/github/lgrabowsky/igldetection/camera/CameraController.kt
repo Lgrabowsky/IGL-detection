@@ -13,6 +13,8 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.ExecutorService
@@ -31,10 +33,16 @@ data class CameraState(
     val framePreview: Boolean = false,
     /** Angesteckte USB-Kameras, die Android nicht als Kamera bereitstellt. */
     val unavailableUsbCameras: List<String> = emptyList(),
+    /** Hinweis zur Kamera, z. B. „USB-Zugriff erlauben“ beim App-eigenen USB-Treiber. */
+    val info: String? = null,
     val error: String? = null,
 )
 
-/** Verbindet Kamera-Vorschau und Bildanalyse (CameraX) mit dem Lebenszyklus der Oberfläche. */
+/**
+ * Verbindet Kamera und Bildanalyse mit dem Lebenszyklus der Oberfläche:
+ * - eingebaute Kameras und von Android bereitgestellte USB-Kameras über CameraX,
+ * - übrige USB-Webcams über den App-eigenen Treiber ([UvcCameraSource]).
+ */
 class CameraController(private val context: Context) {
 
     private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -44,8 +52,19 @@ class CameraController(private val context: Context) {
     private var softwareZoom = false
     private var external = false
 
+    private var uvcSource: UvcCameraSource? = null
+    private var uvcLifecycle: Lifecycle? = null
+    private val uvcLifecycleObserver = LifecycleEventObserver { _, event ->
+        when (event) {
+            Lifecycle.Event.ON_START -> uvcSource?.start()
+            Lifecycle.Event.ON_STOP -> uvcSource?.stop()
+            else -> Unit
+        }
+    }
+
     /**
      * @param externalRotationDegrees Drehung für externe Kameras (Webcam-Montage), siehe [setExternalRotation].
+     * @param onCameraInfo Statusmeldungen, die später eintreffen (USB-Berechtigung, Fehler …).
      */
     suspend fun bind(
         lifecycleOwner: LifecycleOwner,
@@ -54,11 +73,13 @@ class CameraController(private val context: Context) {
         highResolution: Boolean,
         externalRotationDegrees: Int,
         analyzer: SignAnalyzer,
+        onCameraInfo: (String?) -> Unit,
     ): CameraState {
         this.analyzer = analyzer
+        stopAppDriver()
         val provider = awaitProvider().also { this.provider = it }
         val usbNames = UsbCameras.connectedNames(context)
-        val cameras = CameraOptions.describe(provider.availableCameraInfos).let { list ->
+        val cameraXCameras = CameraOptions.describe(provider.availableCameraInfos).let { list ->
             // Genau eine USB-Kamera angesteckt → deren Namen anzeigen (z. B. „Logitech StreamCam (USB)“).
             if (usbNames.size == 1 && list.count { it.first.isExternal } == 1) {
                 list.map { (option, info) ->
@@ -68,9 +89,12 @@ class CameraController(private val context: Context) {
                 list
             }
         }
-        val options = cameras.map { it.first }
-        val unavailableUsb = if (options.none { it.isExternal }) usbNames else emptyList()
-        val (selected, info) = CameraOptions.select(cameras, cameraKey)
+        val androidProvidesUsbCamera = cameraXCameras.any { it.first.isExternal }
+        val unavailableUsb = if (androidProvidesUsbCamera) emptyList() else usbNames
+        // USB-Webcam angesteckt, aber nicht von Android freigegeben → App-eigener Treiber.
+        val appDriverOption = unavailableUsb.firstOrNull()?.let(CameraOptions::appDriverOption)
+        val options = cameraXCameras.map { it.first } + listOfNotNull(appDriverOption)
+        val selected = CameraOptions.select(options, cameraKey)
             ?: return CameraState(options, unavailableUsbCameras = unavailableUsb, error = "Keine Kamera gefunden.")
 
         // Eine USB-Webcam dreht sich nicht mit dem Handy mit. CameraX rechnet bei externen Kameras
@@ -81,6 +105,23 @@ class CameraController(private val context: Context) {
         analyzer.fixedRotationDegrees = if (external) externalRotationDegrees else null
         analyzer.publishPreviewFrames = external
 
+        if (selected.usesAppDriver) {
+            provider.unbindAll()
+            camera = null
+            softwareZoom = true
+            startAppDriver(lifecycleOwner, highResolution, analyzer, onCameraInfo)
+            return CameraState(
+                options = options,
+                active = selected,
+                zoomRange = SOFTWARE_ZOOM_RANGE,
+                softwareZoom = true,
+                framePreview = true,
+                unavailableUsbCameras = unavailableUsb,
+                info = "${unavailableUsb.first()}: wird über den App-eigenen USB-Treiber verbunden …",
+            )
+        }
+
+        val info = cameraXCameras.first { it.first == selected }.second
         val aspect16to9 = AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
         val useCases = mutableListOf<UseCase>()
         if (!external) {
@@ -154,9 +195,37 @@ class CameraController(private val context: Context) {
     }
 
     fun release() {
+        stopAppDriver()
         provider?.unbindAll()
         camera = null
         analysisExecutor.shutdown()
+    }
+
+    /** Startet den USB-Treiber, solange die App sichtbar ist (wie CameraX: ON_START … ON_STOP). */
+    private fun startAppDriver(
+        lifecycleOwner: LifecycleOwner,
+        highResolution: Boolean,
+        analyzer: SignAnalyzer,
+        onCameraInfo: (String?) -> Unit,
+    ) {
+        val source = UvcCameraSource(
+            context = context,
+            highResolution = highResolution,
+            onFrame = { frame -> analyzer.processFrame(frame, analyzer.fixedRotationDegrees ?: 0) },
+            onStatus = onCameraInfo,
+        )
+        uvcSource = source
+        val lifecycle = lifecycleOwner.lifecycle
+        uvcLifecycle = lifecycle
+        // addObserver liefert die bisherigen Ereignisse nach → startet sofort, wenn die App sichtbar ist.
+        lifecycle.addObserver(uvcLifecycleObserver)
+    }
+
+    private fun stopAppDriver() {
+        uvcLifecycle?.removeObserver(uvcLifecycleObserver)
+        uvcLifecycle = null
+        uvcSource?.release()
+        uvcSource = null
     }
 
     private suspend fun awaitProvider(): ProcessCameraProvider = suspendCancellableCoroutine { cont ->

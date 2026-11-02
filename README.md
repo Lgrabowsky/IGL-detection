@@ -52,7 +52,9 @@ Regeln des `IglStateTracker`:
 | „IG-L“ in ≥ 2 Bildern innerhalb von 3 s (Score-Summe ≥ 1,8) **und** ein 100er-Schild in diesem Zeitraum | **IG-L aktiv** (Tempo 100) |
 | „IG-L“ ohne 100er-Schild | nichts – IG-L gibt es nur mit 100 km/h |
 | Anderes Tempolimit (30–90, 110–130) in ≥ 2 Bildern gelesen | sofort **kein IG-L** – auch wenn daneben „IG-L“ gelesen wurde |
-| 100er-Schild passiert, ohne dass dazu „IG-L“ bestätigt wurde | **kein IG-L** (entschieden, sobald das Schild aus dem Bild ist, weil der kleine Zusatz oft erst beim Näherkommen lesbar wird) |
+| 100er-Schild ohne IG-L, Zahl schon groß im Bild (≥ 40 px in 3 Bildern, Zusatz wäre lesbar) | sofort **kein IG-L** – noch während der Annäherung |
+| 100er-Schild ohne IG-L, nur klein gesehen | **kein IG-L**, sobald das Schild aus dem Bild ist (spätestens 0,7 s danach) |
+| „IG-L“ wird nach einem vorzeitigen Wechsel doch noch gelesen | wieder **IG-L aktiv** |
 | Zahl nur in einem einzelnen Bild gelesen | ignoriert (Lesefehler) |
 | 15 min (einstellbar) ohne Bestätigung | wieder **unbekannt** |
 
@@ -117,9 +119,12 @@ mit ihrem Namen (z. B. „Logitech StreamCam (USB)“) und wird bei „Automatis
 
 - **Anstecken:** am besten vor dem App-Start. Die App verbindet sich beim An-/Abstecken neu;
   erscheint die Kamera trotzdem nicht, die App einmal schließen und neu starten.
-- **Nicht freigegeben:** Ist eine USB-Kamera angesteckt, die Android nicht als Kamera
-  bereitstellt, zeigt die App einen roten Hinweis. Dann unterstützt das Handy keine externen
-  Kameras – dafür wäre eine eigene UVC-Anbindung (z. B. über libuvc) nötig, siehe unten.
+- **Nicht freigegeben → App-Treiber:** Erkennt das Handy die Webcam, stellt sie aber nicht als
+  Kamera bereit, spricht die App sie über einen **eigenen USB-Treiber** an (Bibliothek
+  [UVCAndroid](https://github.com/shiyinghan/UVCAndroid): libusb/libuvc, Apache-2.0). Sie
+  erscheint dann als „Logitech StreamCam (USB, App-Treiber)“. Beim ersten Verbinden fragt Android,
+  ob die App auf das USB-Gerät zugreifen darf → „Zulassen“. Beim Anstecken bietet Android außerdem
+  an, die App direkt zu öffnen.
 - **Ausrichtung:** Eine Webcam dreht sich nicht mit dem Handy mit. Die App verwendet ihr Bild
   deshalb so, wie die Webcam es liefert, unabhängig davon, wie das Handy liegt. Hängt die Kamera
   kopfüber, in den Einstellungen „Bild der externen Kamera drehen“ auf 180° stellen. Die
@@ -140,7 +145,6 @@ mit ihrem Namen (z. B. „Logitech StreamCam (USB)“) und wird bei „Automatis
     mit eigenen Aufnahmen – robuster und auf größere Entfernung
   - Abgleich mit GPS/Kartendaten (IG-L-Abschnitte sind bekannt), um Fehlerkennungen außerhalb
     dieser Abschnitte auszuschließen
-  - eigene UVC-Anbindung für Handys ohne Android-Unterstützung für USB-Webcams
   - Hintergrundbetrieb als Vordergrunddienst, Android-Auto-Anzeige
 
 ## Rechtlicher Hinweis

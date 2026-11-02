@@ -16,14 +16,14 @@ object UsbCameras {
     fun connectedNames(context: Context): List<String> = try {
         val usb = context.getSystemService(UsbManager::class.java)
         usb?.deviceList?.values.orEmpty()
-            .filter { it.isVideoDevice() }
+            .filter { isVideoDevice(it) }
             .map { device -> device.productName?.trim()?.takeIf { it.isNotEmpty() } ?: "USB-Kamera" }
     } catch (e: Exception) {
         Log.w("UsbCameras", "USB-Geräte konnten nicht gelesen werden", e)
         emptyList()
     }
 
-    private fun UsbDevice.isVideoDevice(): Boolean =
-        deviceClass == UsbConstants.USB_CLASS_VIDEO ||
-            (0 until interfaceCount).any { getInterface(it).interfaceClass == UsbConstants.USB_CLASS_VIDEO }
+    fun isVideoDevice(device: UsbDevice): Boolean =
+        device.deviceClass == UsbConstants.USB_CLASS_VIDEO ||
+            (0 until device.interfaceCount).any { device.getInterface(it).interfaceClass == UsbConstants.USB_CLASS_VIDEO }
 }

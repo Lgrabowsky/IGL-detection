@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- USB-Geräte mit Video-Schnittstelle (USB-Klasse 14 = UVC), z. B. Logitech StreamCam -->
+<resources>
+    <usb-device class="14" />
+</resources>

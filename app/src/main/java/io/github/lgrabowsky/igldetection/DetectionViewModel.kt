@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -63,7 +64,7 @@ class DetectionViewModel(application: Application) : AndroidViewModel(applicatio
         // Schild-Episoden beenden und Befunde verfallen lassen, auch wenn gerade keine Bilder kommen.
         viewModelScope.launch {
             while (isActive) {
-                delay(1_000)
+                delay(250)
                 step { tracker.tick(SystemClock.elapsedRealtime()) }
             }
         }
@@ -74,6 +75,11 @@ class DetectionViewModel(application: Application) : AndroidViewModel(applicatio
     fun onCameraState(state: CameraState) {
         _camera.value = state
         if (!state.framePreview) _previewFrame.value = null
+    }
+
+    /** Später eintreffende Kamera-Hinweise (z. B. vom App-eigenen USB-Treiber). */
+    fun onCameraInfo(info: String?) {
+        _camera.update { it.copy(info = info) }
     }
 
     fun resetStatus() = step {
