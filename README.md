@@ -66,9 +66,13 @@ Android SDK gebaut und getestet werden kann. Die Tests verwenden synthetische Sc
 
 ## Bauen & Installieren
 
-**Fertige APK:** Jeder Push baut über GitHub Actions eine Debug-APK
-(Actions → letzter Lauf „Build“ → Artefakt `igl-erkennung-debug-apk`). Auf dem Handy
-„Installation aus unbekannten Quellen“ erlauben und die APK öffnen.
+**Fertige APK:** Unter **Releases** liegt die APK zum direkten Download aufs Handy. Dort die
+Datei `igl-erkennung-….apk` öffnen und beim ersten Mal die Installation aus dieser Quelle
+erlauben. Außerdem baut jeder Push eine Debug-APK (Actions → Lauf „Build“ → Artefakt
+`igl-erkennung-debug-apk`, als ZIP).
+
+Neues Release erstellen: Tag `vX.Y.Z` pushen oder den Workflow „Build“ manuell mit
+`release_tag` starten – die APK wird dann automatisch angehängt.
 
 **Android Studio:** Projekt öffnen, Gerät anschließen, ▶ ausführen.
 
