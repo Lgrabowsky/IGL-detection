@@ -12,7 +12,7 @@ data class DetectionConfig(
     val minIglScore: Float = 0.5f,
     val minSpeedScore: Float = 0.5f,
     /**
-     * „IG-L“ gilt als „neben einem Schild“, wenn der Abstand ≤ Faktor × Zahlenhöhe ist
+     * „IG-L“ gilt als „neben einem 100er-Schild“, wenn der Abstand ≤ Faktor × Zahlenhöhe ist
      * (Zusatztafel direkt unter dem Schild ≈ 2, mittlere Anzeige einer Schilderbrücke ≈ 5).
      */
     val nearSignDistanceFactor: Float = 6f,
@@ -72,8 +72,10 @@ class FrameAnalyzer(
             .filter { it.box.centerY <= searchBottom }
             .filterNot { match -> speedSigns.any { it.box.intersectionOverUnion(match.box) > 0f } }
             .map { match ->
+                // IG-L gibt es nur mit 100 km/h → nur ein 100er-Schild in der Nähe stützt den Treffer.
                 val near = speedSigns.any { sign ->
-                    match.box.centerDistanceTo(sign.box) <= config.nearSignDistanceFactor * sign.box.height
+                    sign.valueKmh == IGL_LIMIT_KMH &&
+                        match.box.centerDistanceTo(sign.box) <= config.nearSignDistanceFactor * sign.box.height
                 }
                 match.copy(nearSpeedSign = near)
             }

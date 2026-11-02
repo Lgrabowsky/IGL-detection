@@ -82,6 +82,22 @@ class FrameAnalyzerTest {
     }
 
     @Test
+    fun `IG-L neben einem 80er-Schild zaehlt nicht als IG-L-Schild`() {
+        val image = TestImages.canvas(1200, 800, Color(70, 90, 60))
+        TestImages.drawLedSign(image, cx = 433, cy = 198, radius = 41)
+        val ocr = OcrResult(
+            listOf(
+                ocrLine("80" to box(417, 182, 33, 33)),
+                ocrLine("IG-L" to box(550, 251, 62, 20)),
+            ),
+        )
+        val result = FrameAnalyzer().analyze(0L, 1200, 800, ocr, image.toRgbImage())
+
+        assertEquals(listOf(80), result.speedSigns.map { it.valueKmh })
+        assertEquals(false, result.iglMatches.single().nearSpeedSign)
+    }
+
+    @Test
     fun `IG-L im unteren Bildbereich wird ignoriert`() {
         val ocr = OcrResult(listOf(ocrLine("IG-L" to box(500, 700, 60, 20))))
         val result = FrameAnalyzer().analyze(0L, 1200, 800, ocr, null)

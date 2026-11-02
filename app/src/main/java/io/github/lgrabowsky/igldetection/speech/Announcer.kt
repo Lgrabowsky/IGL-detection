@@ -52,12 +52,7 @@ class Announcer(context: Context) : TextToSpeech.OnInitListener {
         /** Ansage für einen Statuswechsel, oder null, wenn nichts gesagt werden soll. */
         fun announcementFor(old: IglStatus, new: IglStatus): String? = when {
             new is IglStatus.IglActive && old !is IglStatus.IglActive ->
-                new.limitKmh?.let { "I G L aktiv. Tempo $it gilt nicht für Elektroautos." }
-                    ?: "I G L aktiv. Das Tempolimit gilt nicht für Elektroautos."
-
-            new is IglStatus.IglActive && old is IglStatus.IglActive &&
-                new.limitKmh != null && new.limitKmh != old.limitKmh ->
-                "I G L, Tempo ${new.limitKmh}."
+                "I G L aktiv. Tempo ${new.limitKmh} gilt nicht für Elektroautos."
 
             new is IglStatus.NoIgl && old is IglStatus.IglActive ->
                 "I G L aufgehoben. Tempo ${new.limitKmh} gilt auch für Elektroautos."

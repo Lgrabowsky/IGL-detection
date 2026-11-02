@@ -1,25 +1,27 @@
 package io.github.lgrabowsky.igl.core
 
+import kotlin.math.max
+
+/** IG-L-Tempolimits gibt es auf Autobahnen nur als 100 km/h. */
+const val IGL_LIMIT_KMH = 100
+
 /** Der aus mehreren Bildern abgeleitete Zustand. */
 sealed interface IglStatus {
 
     /** Kein gültiger Befund (Start, oder letzter Befund abgelaufen). */
-    data class Unknown(
-        /** Zuletzt gesehenes Tempolimit, bei dem der IG-L-Status unklar blieb. */
-        val lastLimitKmh: Int? = null,
-    ) : IglStatus
+    data object Unknown : IglStatus
 
     /**
-     * Ein Tempolimit mit Zusatz „IG-L“ wurde erkannt. Es gilt nicht für Elektrofahrzeuge.
+     * Ein 100er-Schild mit Zusatz „IG-L“ wurde erkannt. Das Limit gilt nicht für Elektrofahrzeuge.
      */
     data class IglActive(
-        /** Angezeigtes IG-L-Tempolimit, null wenn nur „IG-L“ gelesen wurde. */
-        val limitKmh: Int?,
         val sinceMs: Long,
         val lastConfirmedMs: Long,
-    ) : IglStatus
+    ) : IglStatus {
+        val limitKmh: Int get() = IGL_LIMIT_KMH
+    }
 
-    /** Ein Tempolimit-Schild wurde gut sichtbar passiert – ohne Zusatz „IG-L“. */
+    /** Ein Tempolimit-Schild ohne IG-L wurde erkannt (100 ohne Zusatz oder ein anderes Limit). */
     data class NoIgl(
         val limitKmh: Int,
         val sinceMs: Long,
@@ -30,39 +32,37 @@ sealed interface IglStatus {
 data class TrackerConfig(
     /** Zeitfenster, in dem „IG-L“-Treffer aufsummiert werden. */
     val evidenceWindowMs: Long = 3_000,
-    /** Summe der Treffer-Scores im Zeitfenster, ab der „IG-L aktiv“ gilt (≈ 2 sichere Bilder). */
+    /** Summe der Treffer-Scores im Zeitfenster, ab der „IG-L“ als gelesen gilt (≈ 2 sichere Bilder). */
     val activationEvidence: Float = 1.8f,
-    /** Gewichtung eines „IG-L“-Treffers direkt neben einem Tempolimit-Schild. */
+    /** Gewichtung eines „IG-L“-Treffers direkt neben einem 100er-Schild. */
     val nearSignBoost: Float = 1.5f,
     /** Ein Schild gilt als passiert, wenn es so lange nicht mehr gesehen wurde. */
     val signGapMs: Long = 1_500,
-    /** In so vielen Bildern muss ein Tempowert gelesen werden, damit er zählt. */
+    /** In so vielen Bildern muss ein Tempowert gelesen werden, damit das Schild als erkannt gilt. */
     val minSignFrames: Int = 2,
-    /** „IG-L“, das bis zu so lange vor einem Schild bestätigt wurde, gehört zu diesem Schild. */
+    /** So weit dürfen „IG-L“ und das zugehörige 100er-Schild zeitlich auseinander liegen. */
     val iglLeadMs: Long = 5_000,
-    /** Ein Schild zählt nur dann als „ohne IG-L“, wenn währenddessen fast kein IG-L-Hinweis kam. */
-    val maxIglEvidenceForNegative: Float = 0.5f,
-    /**
-     * „Ohne IG-L“ wird nur entschieden, wenn das Schild groß genug und hoch genug im Bild war –
-     * sonst war der kleinere IG-L-Zusatz evtl. nur nicht lesbar (bzw. es war ein LKW-Aufkleber).
-     */
-    val conclusiveMinTextHeightPx: Int = 20,
-    val conclusiveMaxCenterY: Float = 0.5f,
     /** Nach dieser Zeit ohne erneute Bestätigung verfällt ein Befund. */
     val stateValidityMs: Long = 15 * 60_000L,
 )
 
 /**
- * Fasst die Einzelbild-Auswertungen ([FrameObservation]) über die Zeit zu einem stabilen
- * [IglStatus] zusammen:
+ * Fasst die Einzelbild-Auswertungen ([FrameObservation]) über die Zeit zu einem [IglStatus]
+ * zusammen. Regeln:
  *
- * - **Aktivierung:** „IG-L“ muss in mehreren Bildern kurz hintereinander gelesen werden
- *   (Summe der Scores im Zeitfenster ≥ [TrackerConfig.activationEvidence]). Ein einzelner
- *   OCR-Fehler löst also nichts aus.
- * - **Deaktivierung:** erst, wenn ein Tempolimit-Schild vollständig passiert wurde (eine
- *   „Schild-Episode“ ist vorbei), das gut lesbar war und bei dem kein „IG-L“ zu sehen war.
- * - **Verfall:** ohne erneute Bestätigung wird der Status nach
- *   [TrackerConfig.stateValidityMs] wieder „unbekannt“.
+ * - **IG-L aktiv** nur, wenn „IG-L“ in mehreren Bildern kurz hintereinander gelesen wurde
+ *   (Score-Summe ≥ [TrackerConfig.activationEvidence]) *und* in derselben Zeit ein 100er-Schild
+ *   zu sehen war – IG-L gibt es nur mit 100 km/h.
+ * - **Jedes andere Tempolimit** (80, 60, 130 …) beendet IG-L sofort, sobald es erkannt ist
+ *   (in ≥ [TrackerConfig.minSignFrames] Bildern gelesen).
+ * - **100 ohne IG-L:** Wurde ein 100er-Schild passiert, ohne dass dazu „IG-L“ bestätigt wurde,
+ *   endet IG-L ebenfalls. (Ob ein Zusatz dabei ist, steht erst fest, wenn das Schild vorbei ist –
+ *   der kleine Zusatz wird oft erst beim Näherkommen lesbar.)
+ * - **Verfall:** ohne erneute Bestätigung wird der Status nach [TrackerConfig.stateValidityMs]
+ *   wieder „unbekannt“.
+ *
+ * Im Zweifel wird also eher *kein* IG-L angezeigt – eine fälschliche IG-L-Anzeige wäre der
+ * gefährlichere Fehler.
  *
  * Alle Zeitangaben in Millisekunden einer monotonen Uhr (z. B. `SystemClock.elapsedRealtime()`).
  */
@@ -71,25 +71,21 @@ class IglStateTracker(config: TrackerConfig = TrackerConfig()) {
     @Volatile
     var config: TrackerConfig = config
 
-    var status: IglStatus = IglStatus.Unknown()
+    var status: IglStatus = IglStatus.Unknown
         private set
 
     private class Evidence(val timeMs: Long, val value: Float)
 
-    /** Zeitraum, in dem ein (oder mehrere gleichzeitig sichtbare) Tempolimit-Schilder zu sehen sind. */
-    private class SignEpisode(val startMs: Long, var iglEvidence: Float) {
-        var lastSeenMs = startMs
-        val framesPerLimit = HashMap<Int, Int>()
-        var conclusive = false
-
-        fun dominantLimit(minFrames: Int): Int? =
-            framesPerLimit.filterValues { it >= minFrames }.maxByOrNull { it.value }?.key
+    /** Ein Tempowert, der gerade (mit Unterbrechungen < signGapMs) zu sehen ist. */
+    private class SignTrack(val valueKmh: Int, val firstSeenMs: Long) {
+        var lastSeenMs = firstSeenMs
+        var frames = 0
     }
 
     private val evidence = ArrayDeque<Evidence>()
-    private var episode: SignEpisode? = null
-    private var lastLimitKmh: Int? = null
-    private var lastLimitMs: Long = Long.MIN_VALUE
+    private val tracks = HashMap<Int, SignTrack>()
+    private var lastHundredSeenMs = Long.MIN_VALUE / 2
+    private var lastIglConfirmedMs = Long.MIN_VALUE / 2
 
     /** Aktuelle Summe der IG-L-Hinweise im Zeitfenster (für Debug-Anzeigen). */
     @get:Synchronized
@@ -100,31 +96,30 @@ class IglStateTracker(config: TrackerConfig = TrackerConfig()) {
     fun update(observation: FrameObservation): IglStatus {
         val now = observation.timestampMs
         val cfg = config
-        finishEpisodeIfPassed(now, cfg)
+        finishPassedSigns(now, cfg)
         pruneEvidence(now, cfg)
+
+        for (value in observation.speedSigns.map { it.valueKmh }.distinct()) {
+            val track = tracks.getOrPut(value) { SignTrack(value, now) }
+            track.lastSeenMs = now
+            track.frames++
+            if (value == IGL_LIMIT_KMH) lastHundredSeenMs = now
+        }
 
         val frameEvidence = observation.iglMatches.maxOfOrNull {
             it.score * if (it.nearSpeedSign) cfg.nearSignBoost else 1f
         } ?: 0f
+        if (frameEvidence > 0f) evidence.addLast(Evidence(now, frameEvidence))
 
-        if (observation.speedSigns.isNotEmpty()) {
-            val ep = episode ?: SignEpisode(now, iglEvidence = currentEvidence).also { episode = it }
-            ep.lastSeenMs = now
-            observation.speedSigns.map { it.valueKmh }.distinct().forEach { ep.framesPerLimit.merge(it, 1, Int::plus) }
-            if (observation.speedSigns.any { isConclusive(it, observation, cfg) }) ep.conclusive = true
-        }
-
-        if (frameEvidence > 0f) {
-            evidence.addLast(Evidence(now, frameEvidence))
-            episode?.let { it.iglEvidence += frameEvidence }
-        }
-
-        if (currentEvidence >= cfg.activationEvidence) {
-            val limit = episode?.dominantLimit(1)
-                ?: lastLimitKmh.takeIf { now - lastLimitMs <= cfg.evidenceWindowMs * 2 }
+        val otherLimit = recognizedOtherLimit(cfg)
+        if (otherLimit != null) {
+            // Ein anderes Tempolimit ist zu sehen → kein IG-L, egal was sonst gelesen wurde.
+            setNoIgl(otherLimit.valueKmh, now)
+        } else if (currentEvidence >= cfg.activationEvidence && now - lastHundredSeenMs <= cfg.iglLeadMs) {
+            lastIglConfirmedMs = now
             status = when (val s = status) {
-                is IglStatus.IglActive -> s.copy(limitKmh = limit ?: s.limitKmh, lastConfirmedMs = now)
-                else -> IglStatus.IglActive(limit, sinceMs = now, lastConfirmedMs = now)
+                is IglStatus.IglActive -> s.copy(lastConfirmedMs = now)
+                else -> IglStatus.IglActive(sinceMs = now, lastConfirmedMs = now)
             }
         }
 
@@ -132,11 +127,11 @@ class IglStateTracker(config: TrackerConfig = TrackerConfig()) {
         return status
     }
 
-    /** Ohne neues Bild aufrufen (z. B. periodisch), damit Schild-Episoden enden und Befunde verfallen. */
+    /** Ohne neues Bild aufrufen (z. B. periodisch), damit Schilder als passiert gelten und Befunde verfallen. */
     @Synchronized
     fun tick(nowMs: Long): IglStatus {
         val cfg = config
-        finishEpisodeIfPassed(nowMs, cfg)
+        finishPassedSigns(nowMs, cfg)
         pruneEvidence(nowMs, cfg)
         expire(nowMs, cfg)
         return status
@@ -145,11 +140,16 @@ class IglStateTracker(config: TrackerConfig = TrackerConfig()) {
     @Synchronized
     fun reset() {
         evidence.clear()
-        episode = null
-        lastLimitKmh = null
-        lastLimitMs = Long.MIN_VALUE
-        status = IglStatus.Unknown()
+        tracks.clear()
+        lastHundredSeenMs = Long.MIN_VALUE / 2
+        lastIglConfirmedMs = Long.MIN_VALUE / 2
+        status = IglStatus.Unknown
     }
+
+    private fun recognizedOtherLimit(cfg: TrackerConfig): SignTrack? =
+        tracks.values
+            .filter { it.valueKmh != IGL_LIMIT_KMH && it.frames >= cfg.minSignFrames }
+            .maxByOrNull { it.lastSeenMs }
 
     private fun pruneEvidence(now: Long, cfg: TrackerConfig) {
         while (evidence.isNotEmpty() && now - evidence.first().timeMs > cfg.evidenceWindowMs) {
@@ -157,45 +157,49 @@ class IglStateTracker(config: TrackerConfig = TrackerConfig()) {
         }
     }
 
-    private fun isConclusive(sign: SpeedSign, observation: FrameObservation, cfg: TrackerConfig): Boolean =
-        sign.box.height >= cfg.conclusiveMinTextHeightPx &&
-            sign.box.centerY <= observation.imageHeight * cfg.conclusiveMaxCenterY
+    private fun finishPassedSigns(now: Long, cfg: TrackerConfig) {
+        // Bei gleichzeitig passierten Schildern zuletzt die „anderen“ Limits auswerten – sie gewinnen.
+        val passed = tracks.values
+            .filter { now - it.lastSeenMs > cfg.signGapMs }
+            .sortedWith(compareBy({ it.lastSeenMs }, { it.valueKmh != IGL_LIMIT_KMH }))
+        for (track in passed) {
+            tracks.remove(track.valueKmh)
+            if (track.frames < cfg.minSignFrames) continue // nur kurz gelesen → ignorieren
 
-    private fun finishEpisodeIfPassed(now: Long, cfg: TrackerConfig) {
-        val ep = episode ?: return
-        if (now - ep.lastSeenMs <= cfg.signGapMs) return
-        episode = null
+            if (track.valueKmh != IGL_LIMIT_KMH) {
+                setNoIgl(track.valueKmh, track.lastSeenMs)
+                continue
+            }
+            val iglBelongsToSign = lastIglConfirmedMs >= track.firstSeenMs - cfg.iglLeadMs
+            val current = status
+            when {
+                iglBelongsToSign && current is IglStatus.IglActive ->
+                    status = current.copy(lastConfirmedMs = max(current.lastConfirmedMs, track.lastSeenMs))
 
-        val limit = ep.dominantLimit(cfg.minSignFrames) ?: return
-        lastLimitKmh = limit
-        lastLimitMs = ep.lastSeenMs
+                // IG-L wurde zwar gelesen, danach aber ein anderes Limit erkannt → so lassen.
+                iglBelongsToSign -> Unit
 
+                // 100er-Schild ohne IG-L passiert.
+                recognizedOtherLimit(cfg) == null -> setNoIgl(IGL_LIMIT_KMH, track.lastSeenMs)
+            }
+        }
+    }
+
+    private fun setNoIgl(limitKmh: Int, timeMs: Long) {
         val current = status
-        val iglBelongsToSign = current is IglStatus.IglActive &&
-            current.lastConfirmedMs >= ep.startMs - cfg.iglLeadMs
-        status = when {
-            iglBelongsToSign -> current.copy(limitKmh = limit)
-
-            ep.conclusive && ep.iglEvidence <= cfg.maxIglEvidenceForNegative ->
-                if (current is IglStatus.NoIgl && current.limitKmh == limit) {
-                    current.copy(lastConfirmedMs = ep.lastSeenMs)
-                } else {
-                    IglStatus.NoIgl(limit, sinceMs = ep.lastSeenMs, lastConfirmedMs = ep.lastSeenMs)
-                }
-
-            // Nicht eindeutig: Zustand beibehalten, nur das zuletzt gesehene Limit merken.
-            current is IglStatus.Unknown -> IglStatus.Unknown(limit)
-            else -> current
+        status = if (current is IglStatus.NoIgl && current.limitKmh == limitKmh) {
+            current.copy(lastConfirmedMs = max(current.lastConfirmedMs, timeMs))
+        } else {
+            IglStatus.NoIgl(limitKmh, sinceMs = timeMs, lastConfirmedMs = timeMs)
         }
     }
 
     private fun expire(now: Long, cfg: TrackerConfig) {
-        val s = status
-        val lastConfirmed = when (s) {
+        val lastConfirmed = when (val s = status) {
             is IglStatus.IglActive -> s.lastConfirmedMs
             is IglStatus.NoIgl -> s.lastConfirmedMs
-            is IglStatus.Unknown -> return
+            IglStatus.Unknown -> return
         }
-        if (now - lastConfirmed > cfg.stateValidityMs) status = IglStatus.Unknown()
+        if (now - lastConfirmed > cfg.stateValidityMs) status = IglStatus.Unknown
     }
 }

@@ -35,7 +35,7 @@ class DetectionViewModel(application: Application) : AndroidViewModel(applicatio
     private val announcer = Announcer(application)
     private val lock = Any()
 
-    private val _status = MutableStateFlow<IglStatus>(IglStatus.Unknown())
+    private val _status = MutableStateFlow<IglStatus>(IglStatus.Unknown)
     val status: StateFlow<IglStatus> = _status.asStateFlow()
 
     private val _debug = MutableStateFlow<DebugFrame?>(null)

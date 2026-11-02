@@ -46,7 +46,7 @@ fun StatusPanel(
         targetValue = when (status) {
             is IglStatus.IglActive -> IglColors.Active
             is IglStatus.NoIgl -> IglColors.NoIgl
-            is IglStatus.Unknown -> IglColors.Unknown
+            IglStatus.Unknown -> IglColors.Unknown
         },
         label = "statusBackground",
     )
@@ -89,8 +89,7 @@ private fun StatusContent(status: IglStatus, evSpeedKmh: Int, compact: Boolean, 
             SpeedLimitSign(status.limitKmh, withIglPlate = true, diameter = signDiameter)
             BigText("E-Auto: bis $evSpeedKmh km/h", if (compact) 16 else 30)
             if (!compact) {
-                val limit = status.limitKmh?.let { "Tempo $it" } ?: "Das Tempolimit"
-                Detail("$limit ist ein IG-L-Limit und gilt nicht für Fahrzeuge mit grünem Kennzeichen.")
+                Detail("Tempo ${status.limitKmh} mit Zusatz IG-L gilt nicht für Fahrzeuge mit grünem Kennzeichen.")
                 Detail("Bestätigt ${formatAge(now - status.lastConfirmedMs)}")
             }
         }
@@ -99,17 +98,13 @@ private fun StatusContent(status: IglStatus, evSpeedKmh: Int, compact: Boolean, 
             Headline("KEIN IG-L", Color.White, compact)
             SpeedLimitSign(status.limitKmh, withIglPlate = false, diameter = signDiameter)
             BigText("Tempo ${status.limitKmh} gilt für alle", if (compact) 14 else 24)
-            if (!compact) Detail("Schild ohne IG-L-Zusatz passiert ${formatAge(now - status.lastConfirmedMs)}")
+            if (!compact) Detail("Tempolimit ohne IG-L-Zusatz erkannt ${formatAge(now - status.lastConfirmedMs)}")
         }
 
-        is IglStatus.Unknown -> {
+        IglStatus.Unknown -> {
             Headline("Suche IG-L …", Color(0xFFCFD8DC), compact)
-            val lastLimit = status.lastLimitKmh
-            if (lastLimit != null) {
-                SpeedLimitSign(lastLimit, withIglPlate = false, diameter = signDiameter * 0.8f)
-                if (!compact) Detail("Letztes Tempolimit – ein IG-L-Zusatz war nicht eindeutig lesbar.")
-            } else if (!compact) {
-                Detail("Noch kein IG-L-Schild erkannt. Die Kamera sollte nach vorne auf Fahrbahn und Schilderbrücken zeigen.")
+            if (!compact) {
+                Detail("Noch kein Tempolimit erkannt. Die Kamera sollte nach vorne auf Fahrbahn und Schilderbrücken zeigen.")
             }
         }
     }

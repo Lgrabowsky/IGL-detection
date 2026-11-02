@@ -5,7 +5,7 @@ erkennt, ob ein Tempolimit nach dem **Immissionsschutzgesetz-Luft (IG-L)** gilt 
 Zusatz **„IG-L“** unter dem Tempolimit-Schild bzw. auf der mittleren Anzeige der
 Schilderbrücken (Verkehrsbeeinflussungsanlage). Für Fahrzeuge mit grünem Kennzeichen gilt ein
 IG-L-Limit nicht; die App zeigt dann groß an, dass das höhere Tempo (standardmäßig 130 km/h)
-erlaubt ist.
+erlaubt ist. IG-L-Limits gibt es nur als **100 km/h**.
 
 ```
 ┌──────────────────────────────┬─────────────────────┐
@@ -20,10 +20,11 @@ erlaubt ist.
 ## Funktionen
 
 - Erkennt „IG-L“ auf **LED-Anzeigen** von Schilderbrücken und auf **Zusatztafeln** unter Blechschildern
-- Liest das zugehörige **Tempolimit** (30–130) und prüft es über den **roten Ring** (keine
-  Fehlalarme durch Telefonnummern auf LKW o. Ä.)
-- **Zeitliche Glättung**: ein einzelner Lesefehler löst nichts aus; der Status wird erst
-  aufgehoben, wenn ein gut sichtbares Schild *ohne* IG-L passiert wurde
+- Liest **Tempolimits** (30–130) und prüft sie über den **roten Ring** (keine Fehlalarme durch
+  Telefonnummern auf LKW o. Ä.)
+- **IG-L nur mit 100 km/h**: „IG-L“ zählt nur zusammen mit einem 100er-Schild. Jedes andere
+  erkannte Tempolimit – 100 ohne IG-L, 80, 60, 130 … – beendet die IG-L-Anzeige
+- **Zeitliche Glättung**: ein einzelner Lesefehler löst nichts aus
 - **Sprachausgabe** bei Statuswechsel („IG-L aktiv. Tempo 100 gilt nicht für Elektroautos.“)
 - **Bild-im-Bild**: läuft als kleines Fenster neben der Navigations-App weiter
 - Rückkamera, Frontkamera oder **externe USB-Webcam** wählbar, Zoom-Regler
@@ -40,7 +41,7 @@ Kamerabild (CameraX, 1080p, bis zu ~8 Bilder/s – je nach Gerät)
   → IglTextMatcher        „IG-L“, „IGL“, „1G-L“ … (OCR-Verwechslungen toleriert, bewertet)
   → SpeedLimitMatcher     „100“, „1OO“ … nur gültige Limits
   → RedRingVerifier       Strahlen vom Zahlenmittelpunkt: roter Ring in gleichem Abstand?
-  → FrameAnalyzer         Ergebnis je Bild (IG-L neben einem Schild zählt stärker)
+  → FrameAnalyzer         Ergebnis je Bild (IG-L neben einem 100er-Schild zählt stärker)
   → IglStateTracker       Ergebnis über die Zeit → Status: unbekannt / IG-L aktiv / kein IG-L
 ```
 
@@ -48,10 +49,15 @@ Regeln des `IglStateTracker`:
 
 | Ereignis | Wirkung |
 |---|---|
-| „IG-L“ in ≥ 2 Bildern innerhalb von 3 s (Score-Summe ≥ 1,8) | **IG-L aktiv** (mit erkanntem Limit) |
-| Tempolimit-Schild passiert, gut lesbar (Zahl ≥ 20 px hoch, obere Bildhälfte), kein IG-L-Hinweis | **kein IG-L** |
-| Schild nur klein/weit unten gesehen oder unsicherer IG-L-Hinweis | Status bleibt unverändert |
+| „IG-L“ in ≥ 2 Bildern innerhalb von 3 s (Score-Summe ≥ 1,8) **und** ein 100er-Schild in diesem Zeitraum | **IG-L aktiv** (Tempo 100) |
+| „IG-L“ ohne 100er-Schild | nichts – IG-L gibt es nur mit 100 km/h |
+| Anderes Tempolimit (30–90, 110–130) in ≥ 2 Bildern gelesen | sofort **kein IG-L** – auch wenn daneben „IG-L“ gelesen wurde |
+| 100er-Schild passiert, ohne dass dazu „IG-L“ bestätigt wurde | **kein IG-L** (entschieden, sobald das Schild aus dem Bild ist, weil der kleine Zusatz oft erst beim Näherkommen lesbar wird) |
+| Zahl nur in einem einzelnen Bild gelesen | ignoriert (Lesefehler) |
 | 15 min (einstellbar) ohne Bestätigung | wieder **unbekannt** |
+
+Im Zweifel zeigt die App also eher *kein* IG-L an – eine fälschliche IG-L-Anzeige wäre der
+gefährlichere Fehler.
 
 ## Projektstruktur
 
@@ -95,7 +101,9 @@ Voraussetzungen: Android 8.0 (API 26) oder neuer.
 1. Handy **quer** in eine Halterung an Windschutzscheibe/Armaturenbrett, Kamera nach vorne.
    Der Horizont sollte etwa in der Bildmitte liegen.
 2. Einmalig die **Debug-Anzeige** einschalten (Einstellungen) und prüfen, dass Schilder
-   oberhalb der gelben Suchbereich-Linie liegen.
+   oberhalb der gelben Suchbereich-Linie liegen. Die Linie sollte knapp unter dem Horizont
+   liegen: Tempo-Aufkleber auf LKW („80“) darunter werden ignoriert – würden sie gelesen,
+   würde das die IG-L-Anzeige beenden.
 3. **Zoom** ca. 2× einstellen: Schilder werden früher lesbar und bleiben trotzdem lange im Bild.
 4. Für die Navigation einfach die App verlassen – sie läuft als Bild-im-Bild-Fenster weiter.
 

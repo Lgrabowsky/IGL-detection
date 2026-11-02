@@ -7,7 +7,7 @@ data class IglMatch(
     val box: BoundingBox,
     /** 0..1 – wie sicher der Text „IG-L“ bedeutet (inkl. Kontext). */
     val score: Float,
-    /** true, wenn im selben Bild ein bestätigtes Tempolimit-Schild in der Nähe ist. */
+    /** true, wenn im selben Bild ein bestätigtes 100er-Schild in der Nähe ist. */
     val nearSpeedSign: Boolean = false,
 )
 
